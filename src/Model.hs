@@ -1,64 +1,77 @@
 module Model where
 
 import Data.IntMap hiding (foldl')
-import System.Random
 import Control.Monad.Random.Lazy hiding (fromList)
 import Data.List (foldl',elemIndex)
 import Data.Discrimination
 import Data.Monoid
+import Control.Monad.Writer
 
 
 -- transaction model
 
-type PlayerCount = Int
-type IterationCount = Int
 type Player = Int
 type Wealth = Double
+type Transaction m = ((Wealth , Wealth) -> m (Wealth , Wealth))
 
 type World = IntMap Wealth
 
-reportSimulation ::
-  PlayerCount ->
-  (forall m . MonadRandom m => (Wealth , Wealth) -> m (Wealth , Wealth)) ->
-  IterationCount ->
-  (forall m . MonadRandom m => m Wealth)
-  -> IO ()
-reportSimulation playerCount t iterations genWealth = do
+data Report = Report {
+    startGini :: Double
+  , endGini :: Double
+  , richPercentiles :: [ (Double , Double) ]
+  }
 
-  putStrLn $ "Simulating " <> show playerCount <> " players at " <> show iterations <> " iterations..."
+instance Show Report where
+  show (Report sg eg ps) = execWriter $ do
+    putLine $ "Start Gini: " <> show sg
+    putLine $ "End Gini: " <> show eg
+    putLine $ "Richest players' starting -> ending percentiles:"
 
-  gen <- newStdGen
+    _ <- flip traverse ps $ \(start,end) ->
+      putLine $ "    " <> showPerc start <> " -> " <> showPerc end
 
-  (initialWorld,g) <- runRandT startWorld gen
+    pure ()
 
-  endWorld <- flip evalRandT g $
-    stepN stepTransaction iterations initialWorld
+    where
+      putLine :: String -> Writer String ()
+      putLine s = tell $ s <> "\n"
 
-  putStrLn $ "Start Gini: " <> show (gini initialWorld)
-  putStrLn $ "End Gini: " <> show (gini endWorld)
+      showPerc x =
+        let percentile :: Int = round $ (*) 100 x in
+        show percentile
+
+data SimulationSetup m = SimulationSetup {
+    playerCount :: Int
+  , transaction :: Transaction m
+  , iterationCount :: Int
+  , startingWealth :: m Wealth
+  }
+
+reportSimulation :: forall m . MonadRandom m => SimulationSetup m -> m Report
+reportSimulation (SimulationSetup pc t iterations genWealth) = do
+
+  initialWorld <- startWorld
+
+  endWorld <- stepN stepTransaction iterations initialWorld
 
   let top5 = findTop endWorld 5
 
-  putStrLn "Richest players' starting -> ending percentiles:"
-
-  _ <- flip traverse top5 $ \x -> do
-
-    putStrLn $ "   " <> showPerc x initialWorld <> " -> " <> showPerc x endWorld <> ""
-
-  pure ()
+  pure $ Report {
+      startGini = gini initialWorld
+    , endGini = gini endWorld
+    , richPercentiles = flip fmap top5 $ \x ->
+        (findPercentile x initialWorld , findPercentile x endWorld)
+    }
 
   where
-    showPerc x w =
-      let percentile :: Int = round $ (*) 100 $ findPercentile x w in
-      show percentile
-
-    startWorld :: MonadRandom m => m World
+    startWorld :: m World
     startWorld = do
       wealths <- traverse (const genWealth) players
       pure . fromList $ zip players wealths
 
     players :: [ Player ]
-    players = [ 1 .. playerCount ]
+    players = [ 1 .. pc ]
 
     stepN :: MonadRandom m => (World -> m World) -> Int -> (World -> m World)
     stepN _ 0 x = pure x

@@ -1,7 +1,9 @@
 module Main where
 
 import Control.Monad.Random.Lazy (MonadRandom(getRandom,getRandomR))
+import Data.Monoid
 import Model
+
 
 -- various transaction functions
 
@@ -28,18 +30,25 @@ randomLimitByNegotiatingPower (w1 , w2) = do
 
 
 main :: IO ()
-main =
-  reportSimulation
-    playerCount
-    randomLimitByNegotiatingPower
-    iterCount
-    genWealth
+main = do
+
+  let setup = SimulationSetup {
+      playerCount = 500
+    , transaction = randomLimitByNegotiatingPower
+    , iterationCount = 5000
+    , startingWealth = genWealth
+    }
+
+  putStrLn $
+        "Simulating "
+     <> show (playerCount setup)
+     <> " players at "
+     <> show (iterationCount setup)
+     <> " iterations..."
+  
+  reportSimulation setup >>= print
 
   where
-    playerCount = 500
-
-    iterCount = 5000
-    
     genWealth :: MonadRandom m => m Wealth
     genWealth = do
       -- uniform wealth scale (low start gini)
