@@ -19,7 +19,7 @@ executable wealth
   main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       MonadRandom
+  build-depends:       MonadRandom >= 0.5 && < 0.6
                      , base >=4.9 && < 5
                      , containers >= 0.5.7.1
                      , discrimination
